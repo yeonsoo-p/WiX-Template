@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "userprocessor"
+name = "fileviewer"
 version = "0.1.0"
-description = "A simple CSV processor using pandas and tabulate"
+description = "A simple GUI file viewer application using tkinter"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
 authors = [
-    {name = "PyApp Template", email = "yeonsoopark315@gmail.com"},
+    {name = "Yeonsoo Park", email = "yeonsoopark315@gmail.com"},
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -19,24 +19,20 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
+    "Environment :: X11 Applications",
+    "Environment :: Win32 (MS Windows)",
+    "Topic :: Desktop Environment :: File Managers",
 ]
-dependencies = [
-    "pandas>=1.0.0",
-    "tabulate>=0.8.0",
-]
+dependencies = []  # tkinter is included with Python
 
 [project.scripts]
-userprocessor = "userprocessor.__main__:main"
+fileviewer = "fileviewer.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["userprocessor*"]
+include = ["fileviewer*"]
 exclude = ["tests*"]
-
-[tool.setuptools.package-data]
-userprocessor = ["*.csv"]
 
 [tool.ruff]
 line-length = 120
@@ -62,11 +58,3 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
-
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false
-disallow_any_generics = false
-ignore_missing_imports = true

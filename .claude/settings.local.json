@@ -8,7 +8,11 @@
       "Bash(powershell:*)",
       "Bash(where.exe:*)",
       "Bash(git commit:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:stackoverflow.com)",
+      "Bash(Remove-Item \"C:\\workspace\\WiX-Template\\installer\\*.msi\" -Force -ErrorAction SilentlyContinue)"
     ],
     "deny": [],
     "ask": []
