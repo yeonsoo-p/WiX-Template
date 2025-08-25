@@ -1,0 +1,59 @@
+# WiX build artifacts
+installer/
+*.msi
+*.wixobj
+*.wixpdb
+*.cab
+*.wxs
+*.rtf
+
+# Generated images
+banner.bmp
+dialog.bmp
+
+# Build directories
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Python virtual environments
+venv/
+env/
+.env
+.venv
+
+# Test coverage
+.coverage
+htmlcov/
+*.cover
+.pytest_cache/
+
+# Package files
+*.whl
+*.tar.gz
+*.zip
