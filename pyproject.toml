@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
 authors = [
-    {name = "PyApp Template", email = "example@example.com"},
+    {name = "PyApp Template", email = "yeonsoopark315@gmail.com"},
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
