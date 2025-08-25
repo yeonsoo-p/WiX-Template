@@ -4,66 +4,100 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a WiX Toolset 6.0 installer generator project that creates MSI packages for Windows applications. The main application being packaged is `userprocessor.exe` with accompanying data files.
+This is a WiX Toolset 6.0 installer generator project that creates MSI packages for Windows applications. The main application being packaged is `fileviewer.exe`. The project provides a configurable PowerShell script that generates WiX source files and builds MSI installers with a custom UI dialog for shortcut configuration.
 
 ## Build Commands
 
 ### Building the Installer
 ```powershell
-.\Build-Installer.ps1
+.\build_msi.ps1
 ```
 
 This PowerShell script:
-- Reads version from `pyproject.toml` (currently 0.1.0)
+- Reads project name and version from `pyproject.toml` (defaults to fileviewer.exe and 0.1.0)
 - Generates `License.rtf` from the plain text LICENSE file
-- Creates white banner (493x58) and dialog (493x312) BMP images
+- Creates white banner (493x58) and dialog (493x312) BMP images if they don't exist
 - Cleans previous build artifacts (.wixobj, .wixpdb, .cab, .msi)
+- Generates a WiX source file dynamically
 - Builds the MSI installer in the `installer/` directory
 
 ### Build with Custom Parameters
 ```powershell
-.\Build-Installer.ps1 -Version "2.0.0" -Manufacturer "Company Name" -ProductName "Product Name"
+.\build_msi.ps1 -ExecutableName "myapp.exe" -Version "2.0.0" -Manufacturer "Company Name" -ProductName "Product Name" -InstallFolderName "MyApp"
 ```
+
+Optional parameters:
+- `-ExecutableName`: Main executable file (defaults to name from pyproject.toml)
+- `-Version`: Product version (defaults to version from pyproject.toml)
+- `-Manufacturer`: Company name for installer
+- `-ProductName`: Display name for the product
+- `-InstallFolderName`: Installation folder name under C:\
+- `-CsvFile`: Optional data file to include
 
 ## Architecture
 
-### Core Components
+### Installation Directory
+The installer is configured to install to `C:\[ProductName]` by default, not to Program Files. This is achieved by using `TARGETDIR` instead of `ProgramFiles6432Folder` in the WiX configuration.
 
-1. **Build-Installer.ps1**: Main PowerShell script that orchestrates the entire build process
-   - Dynamically generates WiX source file (UserProcessor.wxs)
-   - Creates required image assets (banner.bmp, dialog.bmp)
-   - Converts LICENSE to RTF format for installer
-   - Invokes WiX toolchain with proper extensions
+### Custom Dialog Integration
+The installer uses WixUI_InstallDir as the base UI and injects a custom dialog (`CustomShortcutsDlg`) between the installation directory selection and the ready-to-install dialog. Key implementation details:
 
-2. **WiX Configuration**: The script generates a WiX v6 source file with:
-   - UI extension for installer dialogs (`-ext WixToolset.UI.wixext`)
-   - Fixed UpgradeCode for version management
-   - Dynamic component GUIDs for each build
-   - Includes both exe and CSV files in installation
+- **Navigation Override**: Uses `Order="999"` on Publish elements to override the default WixUI_InstallDir navigation sequence
+- **Checkbox Controls**: Custom dialog includes checkboxes for desktop and start menu shortcuts
+- **Properties**: `INSTALLDESKTOPSHORTCUT` and `INSTALLSTARTMENUSHORTCUT` control shortcut creation
 
-3. **Version Management**: Version is automatically extracted from `pyproject.toml` using regex pattern matching. The script falls back to "1.0.0" if version cannot be parsed.
+### Dialog Sequence
+1. Welcome Dialog
+2. License Agreement 
+3. Installation Directory (editable path)
+4. **Custom Shortcuts Dialog** (checkboxes for desktop/start menu shortcuts)
+5. Ready to Install
+6. Installation Progress
+7. Exit Dialog
 
 ## Key Implementation Details
 
-- **WiX 6.0 Compatibility**: Uses proper namespace declarations (`xmlns:ui`) and extension references
-- **Artifact Cleanup**: Always removes previous build artifacts before new builds to prevent conflicts
-- **License Conversion**: Automatically converts plain text LICENSE to RTF with proper escaping of special characters
-- **Image Generation**: Uses System.Drawing to programmatically create white BMP images for installer UI
+### WiX 6.0 Syntax Requirements
+- No inner text in Publish elements (use attributes only)
+- Conditions must be attributes, not inner text: `Condition="INSTALLDESKTOPSHORTCUT"`
+- Proper namespace declarations: `xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"`
+
+### Dynamic GUID Generation
+Component GUIDs are generated dynamically for each build using PowerShell:
+```powershell
+Guid="{$([guid]::NewGuid().ToString().ToUpper())}"
+```
+
+### License File Conversion
+The script automatically converts LICENSE to License.rtf:
+- Escapes special RTF characters (\, {, })
+- Converts line breaks to RTF paragraphs
+- Creates properly formatted RTF document
+
+## Testing Installation
+
+```powershell
+# Install
+msiexec /i "installer\fileviewer-0.1.0.msi"
+
+# Uninstall
+msiexec /x "installer\fileviewer-0.1.0.msi"
+```
 
 ## Important Notes
 
 - WiX Toolset 6.0 must be installed and available in PATH
-- The script generates UserProcessor.wxs dynamically - manual edits will be overwritten
-- The UpgradeCode in Build-Installer.ps1 should remain consistent across versions for proper upgrade handling
-- All build artifacts are ignored by git (see .gitignore)
+- The generated .wxs file should not be manually edited (it's regenerated each build)
+- The UpgradeCode is dynamically generated per build - for production, this should be fixed
+- Build artifacts in the installer/ directory are not tracked in git
 
-## Testing Installation
+## Troubleshooting Common Issues
 
-After building:
-```powershell
-# Install
-msiexec /i "installer\UserProcessor-0.1.0.msi"
+### Dialog Navigation Issues
+If the custom dialog is being skipped, ensure the Order attribute on Publish elements is high enough (e.g., Order="999") to override default navigation.
 
-# Uninstall
-msiexec /x "installer\UserProcessor-0.1.0.msi"
-```
+### Duplicate Control Errors
+When modifying dialogs, ensure control navigation is defined either inside the Dialog element OR in external Publish elements, not both.
+
+### Windows Installer Service Errors
+If you get "Windows Installer service failed to start" errors, the service may need to be restarted or there may be a permissions issue.
