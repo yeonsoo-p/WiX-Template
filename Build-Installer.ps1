@@ -1,10 +1,13 @@
 # Build-Installer.ps1
-# PowerShell script to create a WiX installer for userprocessor.exe
+# PowerShell script to create a WiX installer for executables
 
 param(
+    [string]$ExecutableName = "userprocessor.exe",
     [string]$Version,
     [string]$Manufacturer = "Your Company",
-    [string]$ProductName = "User Processor"
+    [string]$ProductName,
+    [string]$InstallFolderName,
+    [string]$CsvFile = "username.csv"
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,11 +15,22 @@ $ErrorActionPreference = "Stop"
 # Configuration
 $ProjectRoot = $PSScriptRoot
 
-# Read version from pyproject.toml if not provided
-if (-not $Version) {
-    $pyprojectPath = Join-Path $ProjectRoot "pyproject.toml"
-    if (Test-Path $pyprojectPath) {
-        $pyprojectContent = Get-Content $pyprojectPath -Raw
+# Read project name and version from pyproject.toml if not provided
+$pyprojectPath = Join-Path $ProjectRoot "pyproject.toml"
+if (Test-Path $pyprojectPath) {
+    $pyprojectContent = Get-Content $pyprojectPath -Raw
+    
+    # Extract project name if executable not specified
+    if (-not $PSBoundParameters.ContainsKey('ExecutableName')) {
+        if ($pyprojectContent -match '(?m)^\s*name\s*=\s*"([^"]+)"') {
+            $projectName = $matches[1]
+            $ExecutableName = "$projectName.exe"
+            Write-Host "Using executable name from pyproject.toml: $ExecutableName" -ForegroundColor Cyan
+        }
+    }
+    
+    # Extract version if not provided
+    if (-not $Version) {
         if ($pyprojectContent -match 'version\s*=\s*"([^"]+)"') {
             $Version = $matches[1]
             Write-Host "Using version from pyproject.toml: $Version" -ForegroundColor Cyan
@@ -26,15 +40,27 @@ if (-not $Version) {
             Write-Host "Could not parse version from pyproject.toml, using default: $Version" -ForegroundColor Yellow
         }
     }
-    else {
+}
+else {
+    if (-not $Version) {
         $Version = "1.0.0"
         Write-Host "pyproject.toml not found, using default version: $Version" -ForegroundColor Yellow
     }
 }
-$SourceFile = Join-Path $ProjectRoot "userprocessor.exe"
-$WxsFile = Join-Path $ProjectRoot "UserProcessor.wxs"
+
+# Derive defaults from executable name if not provided
+$ExeBaseName = [System.IO.Path]::GetFileNameWithoutExtension($ExecutableName)
+if (-not $ProductName) {
+    $ProductName = $ExeBaseName
+}
+if (-not $InstallFolderName) {
+    $InstallFolderName = $ExeBaseName
+}
+
+$SourceFile = Join-Path $ProjectRoot $ExecutableName
+$WxsFile = Join-Path $ProjectRoot "$ExeBaseName.wxs"
 $OutputDir = Join-Path $ProjectRoot "installer"
-$MsiName = "UserProcessor-$Version.msi"
+$MsiName = "$ExeBaseName-$Version.msi"
 
 Write-Host "WiX Installer Build Script" -ForegroundColor Cyan
 Write-Host "=========================" -ForegroundColor Cyan
@@ -44,6 +70,13 @@ Write-Host ""
 if (-not (Test-Path $SourceFile)) {
     Write-Error "Source file not found: $SourceFile"
     exit 1
+}
+
+# Verify CSV file exists if specified
+$CsvFilePath = Join-Path $ProjectRoot $CsvFile
+if ($CsvFile -and -not (Test-Path $CsvFilePath)) {
+    Write-Warning "CSV file not found: $CsvFilePath - It will not be included in the installer"
+    $CsvFile = $null
 }
 
 # Create output directory if it doesn't exist
@@ -68,7 +101,7 @@ $wxsContent = @"
         
         <!-- Define the installation directory -->
         <StandardDirectory Id="ProgramFiles6432Folder">
-            <Directory Id="INSTALLFOLDER" Name="UserProcessor" />
+            <Directory Id="INSTALLFOLDER" Name="$InstallFolderName" />
         </StandardDirectory>
 
         <!-- Main feature -->
@@ -80,7 +113,7 @@ $wxsContent = @"
         <!-- Component group for files -->
         <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
             <Component Id="MainExecutable" Guid="{$([guid]::NewGuid().ToString().ToUpper())}">
-                <File Id="UserProcessorExe" Source="userprocessor.exe" KeyPath="yes">
+                <File Id="MainExe" Source="$(Split-Path $SourceFile -Leaf)" KeyPath="yes">
                     <Shortcut Id="startmenuShortcut" 
                               Directory="ProgramMenuFolder" 
                               Name="$ProductName"
@@ -89,12 +122,13 @@ $wxsContent = @"
                               IconIndex="0"
                               Advertise="yes" />
                 </File>
-            </Component>
+            </Component>$(if ($CsvFile) { @"
             
             <!-- Add CSV file as optional component -->
             <Component Id="CsvFile" Guid="{$([guid]::NewGuid().ToString().ToUpper())}">
-                <File Id="UsernameCsv" Source="username.csv" KeyPath="yes" />
+                <File Id="DataCsv" Source="$(Split-Path $CsvFile -Leaf)" KeyPath="yes" />
             </Component>
+"@ })
         </ComponentGroup>
 
         <!-- Start Menu Shortcut -->
@@ -111,7 +145,7 @@ $wxsContent = @"
         </StandardDirectory>
 
         <!-- Icon definition -->
-        <Icon Id="exe" SourceFile="userprocessor.exe" />
+        <Icon Id="exe" SourceFile="$(Split-Path $SourceFile -Leaf)" />
 
         <!-- Add/Remove Programs properties -->
         <Property Id="ARPPRODUCTICON" Value="exe" />
