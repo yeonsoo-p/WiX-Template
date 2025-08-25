@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(if [ -f \"C:\\workspace\\WiX-Template\\License.rtf\" ])",
+      "Bash(then echo \"File exists\")",
+      "Bash(else echo \"File does not exist\")",
+      "Bash(fi)",
+      "Bash(powershell:*)",
+      "Bash(where.exe:*)",
+      "Bash(git commit:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
