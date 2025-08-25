@@ -28,9 +28,6 @@ __pycache__/
 *~
 .DS_Store
 
-# Claude Code
-.claude/
-
 # Windows
 Thumbs.db
 ehthumbs.db
