@@ -12,7 +12,8 @@
       "WebSearch",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:stackoverflow.com)",
-      "Bash(Remove-Item \"C:\\workspace\\WiX-Template\\installer\\*.msi\" -Force -ErrorAction SilentlyContinue)"
+      "Bash(Remove-Item \"C:\\workspace\\WiX-Template\\installer\\*.msi\" -Force -ErrorAction SilentlyContinue)",
+      "Bash(git log:*)"
     ],
     "deny": [],
     "ask": []
