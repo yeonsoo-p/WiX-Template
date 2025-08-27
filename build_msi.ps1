@@ -2,7 +2,7 @@
 # PowerShell script to create a WiX installer for executables
 
 param(
-    [string]$ExecutableName = "userprocessor.exe",
+    [string]$ExecutableName = "fileviewer.exe",
     [string]$Version,
     [string]$Manufacturer = "Your Company",
     [string]$ProductName,
@@ -102,7 +102,11 @@ $wxsContent = @"
              Version="$Version" 
              Manufacturer="$Manufacturer"
              UpgradeCode="$UpgradeGuid"
-             Scope="perMachine">
+             Scope="perMachine"
+             Compressed="yes">
+        
+        <!-- Embed CAB file in MSI for standalone installer -->
+        <MediaTemplate EmbedCab="yes" />
         
         <!-- Define the installation directory at C:\ -->
         <StandardDirectory Id="TARGETDIR">
