@@ -2,12 +2,12 @@
 # PowerShell script to create a WiX installer for executables
 
 param(
-    [string]$ExecutableName = "fileviewer.exe",
-    [string]$Version,
-    [string]$Manufacturer = "Your Company",
-    [string]$ProductName,
-    [string]$InstallFolderName,
-    [string]$CsvFile = "username.csv"
+    [string]$SourceDir = "dist\ipg_launcher",
+    [string]$ExecutableName = "ipg_launcher.exe",
+    [string]$Version = "2.1.3",
+    [string]$Manufacturer = "IPG Automotive Korea Ltd.",
+    [string]$ProductName = "IPG Launcher",
+    [string]$InstallFolderName = "IPG Launcher"
 )
 
 $ErrorActionPreference = "Stop"
@@ -57,7 +57,9 @@ if (-not $InstallFolderName) {
     $InstallFolderName = $ExeBaseName
 }
 
-$SourceFile = Join-Path $ProjectRoot $ExecutableName
+# Set up paths
+$SourcePath = Join-Path $ProjectRoot $SourceDir
+$SourceFile = Join-Path $SourcePath $ExecutableName
 $WxsFile = Join-Path $ProjectRoot "$ExeBaseName.wxs"
 $OutputDir = Join-Path $ProjectRoot "installer"
 $MsiName = "$ExeBaseName-$Version.msi"
@@ -68,20 +70,128 @@ Write-Host ""
 Write-Host "Configuration:" -ForegroundColor Yellow
 Write-Host "  Product: $ProductName" -ForegroundColor White
 Write-Host "  Version: $Version" -ForegroundColor White
+Write-Host "  Source: $SourcePath" -ForegroundColor White
 Write-Host "  Install to: C:\$InstallFolderName" -ForegroundColor White
 Write-Host ""
 
-# Verify source file exists
-if (-not (Test-Path $SourceFile)) {
-    Write-Error "Source file not found: $SourceFile"
+# Verify source directory and executable exist
+if (-not (Test-Path $SourcePath)) {
+    Write-Error "Source directory not found: $SourcePath"
     exit 1
 }
 
-# Verify CSV file exists if specified
-$CsvFilePath = Join-Path $ProjectRoot $CsvFile
-if ($CsvFile -and -not (Test-Path $CsvFilePath)) {
-    Write-Warning "CSV file not found: $CsvFilePath - It will not be included in the installer"
-    $CsvFile = $null
+if (-not (Test-Path $SourceFile)) {
+    Write-Error "Executable not found: $SourceFile"
+    exit 1
+}
+
+# Function to create a short, unique WiX ID using hash
+function Get-WixId {
+    param(
+        [string]$Prefix,
+        [string]$Value
+    )
+    
+    # Always use hash for consistency and brevity
+    $hash = [System.Security.Cryptography.SHA256]::Create()
+    $hashBytes = $hash.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Value))
+    $hashString = [System.BitConverter]::ToString($hashBytes).Replace("-", "").Substring(0, 12)
+    $hash.Dispose()
+    
+    # Return prefix + short hash (e.g., "Dir_A1B2C3D4E5F6")
+    return "${Prefix}_${hashString}"
+}
+
+# Function to generate WiX directory structure
+function Get-WixDirectoryStructure {
+    param(
+        [string]$Path,
+        [string]$ParentId = "INSTALLFOLDER",
+        [string]$RelativePath = ""
+    )
+    
+    $dirs = @{}
+    $items = Get-ChildItem -Path $Path -Directory
+    
+    foreach ($dir in $items) {
+        $dirName = $dir.Name
+        $fullPath = if ($RelativePath) { "$RelativePath\$dirName" } else { $dirName }
+        $dirId = Get-WixId -Prefix "Dir" -Value $fullPath
+        
+        $newRelativePath = $fullPath
+        $dirs[$dirId] = @{
+            Name = $dirName
+            ParentId = $ParentId
+            Path = $dir.FullName
+            RelativePath = $newRelativePath
+        }
+        
+        # Recursively get subdirectories
+        $subDirs = Get-WixDirectoryStructure -Path $dir.FullName -ParentId $dirId -RelativePath $newRelativePath
+        foreach ($key in $subDirs.Keys) {
+            $dirs[$key] = $subDirs[$key]
+        }
+    }
+    
+    return $dirs
+}
+
+# Function to generate WiX components for files
+function Get-WixFileComponents {
+    param(
+        [string]$Path,
+        [string]$DirectoryId,
+        [string]$SourceBase,
+        [string]$RelativePath = ""
+    )
+    
+    $components = @()
+    $files = Get-ChildItem -Path $Path -File
+    
+    foreach ($file in $files) {
+        # Skip the main executable in root as it's handled separately
+        if ($DirectoryId -eq "INSTALLFOLDER" -and $file.Name -eq $ExecutableName) {
+            continue
+        }
+        
+        $fullPath = if ($RelativePath) { "$RelativePath\$($file.Name)" } else { $file.Name }
+        $fileId = Get-WixId -Prefix "File" -Value $fullPath
+        $componentId = Get-WixId -Prefix "Comp" -Value $fullPath
+        
+        $relativeSrc = if ($RelativePath) { "$RelativePath\$($file.Name)" } else { $file.Name }
+        $sourcePath = "$SourceDir\$relativeSrc"
+        
+        $components += @{
+            ComponentId = $componentId
+            FileId = $fileId
+            DirectoryId = $DirectoryId
+            Source = $sourcePath
+            FileName = $file.Name
+        }
+    }
+    
+    return $components
+}
+
+# Function to get all components from directory tree
+function Get-AllWixComponents {
+    param(
+        [string]$RootPath,
+        [hashtable]$Directories
+    )
+    
+    $allComponents = @()
+    
+    # Get files from root
+    $allComponents += Get-WixFileComponents -Path $RootPath -DirectoryId "INSTALLFOLDER" -SourceBase $SourceDir
+    
+    # Get files from each subdirectory
+    foreach ($dirId in $Directories.Keys) {
+        $dir = $Directories[$dirId]
+        $allComponents += Get-WixFileComponents -Path $dir.Path -DirectoryId $dirId -SourceBase $SourceDir -RelativePath $dir.RelativePath
+    }
+    
+    return $allComponents
 }
 
 # Create output directory if it doesn't exist
@@ -91,7 +201,14 @@ if (-not (Test-Path $OutputDir)) {
 }
 
 # Generate a new GUID for the product (you should keep this consistent for upgrades)
-$UpgradeGuid = [guid]::NewGuid().ToString().ToUpper()
+$UpgradeGuid = "2DC34973-3542-4695-9128-2E9766A096F4"
+
+# Scan the source directory structure
+Write-Host "Scanning source directory structure..." -ForegroundColor Yellow
+$directories = Get-WixDirectoryStructure -Path $SourcePath
+$fileComponents = Get-AllWixComponents -RootPath $SourcePath -Directories $directories
+
+Write-Host "Found $($directories.Count) directories and $($fileComponents.Count) additional files" -ForegroundColor Green
 
 # Create the WXS file content
 $wxsContent = @"
@@ -107,30 +224,62 @@ $wxsContent = @"
         
         <!-- Embed CAB file in MSI for standalone installer -->
         <MediaTemplate EmbedCab="yes" />
-        
         <!-- Define the installation directory at C:\ -->
         <StandardDirectory Id="TARGETDIR">
-            <Directory Id="INSTALLFOLDER" Name="$InstallFolderName" />
+            <Directory Id="INSTALLFOLDER" Name="$InstallFolderName">
+$(
+    # Generate directory structure
+    $dirXml = ""
+    foreach ($dirId in $directories.Keys) {
+        $dir = $directories[$dirId]
+        # Find parent indent level
+        $parentId = $dir.ParentId
+        $indentLevel = 4
+        if ($parentId -ne "INSTALLFOLDER") {
+            $indentLevel = 5
+            while ($parentId -ne "INSTALLFOLDER" -and $directories.ContainsKey($parentId)) {
+                $parentId = $directories[$parentId].ParentId
+                $indentLevel++
+            }
+        }
+        $indent = " " * $indentLevel
+        $dirXml += "$indent<Directory Id=`"$dirId`" Name=`"$($dir.Name)`" />`n"
+    }
+    $dirXml.TrimEnd()
+)
+            </Directory>
         </StandardDirectory>
 
         <!-- Main feature -->
         <Feature Id="ProductFeature" Title="$ProductName" Level="1">
             <ComponentGroupRef Id="ProductComponents" />
+            <ComponentGroupRef Id="InternalComponents" />
             <ComponentRef Id="StartMenuShortcut" />
             <ComponentRef Id="DesktopShortcut" />
         </Feature>
 
-        <!-- Component group for files -->
+        <!-- Component group for main executable -->
         <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
             <Component Id="MainExecutable" Guid="{$([guid]::NewGuid().ToString().ToUpper())}">
-                <File Id="MainExe" Source="$(Split-Path $SourceFile -Leaf)" KeyPath="yes" />
-            </Component>$(if ($CsvFile) { @"
-            
-            <!-- Add CSV file as optional component -->
-            <Component Id="CsvFile" Guid="{$([guid]::NewGuid().ToString().ToUpper())}">
-                <File Id="DataCsv" Source="$(Split-Path $CsvFile -Leaf)" KeyPath="yes" />
+                <File Id="MainExe" Source="$SourceDir\$ExecutableName" KeyPath="yes" />
             </Component>
-"@ })
+        </ComponentGroup>
+        
+        <!-- Component group for all other files -->
+        <ComponentGroup Id="InternalComponents">
+$(
+    # Generate components for all files
+    $componentXml = ""
+    foreach ($comp in $fileComponents) {
+        $componentXml += @"
+            <Component Id="$($comp.ComponentId)" Directory="$($comp.DirectoryId)" Guid="{$([guid]::NewGuid().ToString().ToUpper())}">
+                <File Id="$($comp.FileId)" Source="$($comp.Source)" KeyPath="yes" />
+            </Component>
+
+"@
+    }
+    $componentXml.TrimEnd()
+)
         </ComponentGroup>
 
         <!-- Start Menu Shortcut (conditional) -->
@@ -138,7 +287,7 @@ $wxsContent = @"
             <Component Id="StartMenuShortcut" Guid="{$([guid]::NewGuid().ToString().ToUpper())}" Condition="INSTALLSTARTMENUSHORTCUT">
                 <Shortcut Id="StartMenuShortcutId"
                           Name="$ProductName"
-                          Target="[INSTALLFOLDER]$(Split-Path $SourceFile -Leaf)"
+                          Target="[INSTALLFOLDER]$ExecutableName"
                           WorkingDirectory="INSTALLFOLDER" />
                 <RemoveFolder Id="RemoveProgramMenuFolder" On="uninstall" />
                 <RegistryValue Root="HKCU" 
@@ -155,7 +304,7 @@ $wxsContent = @"
             <Component Id="DesktopShortcut" Guid="{$([guid]::NewGuid().ToString().ToUpper())}" Condition="INSTALLDESKTOPSHORTCUT">
                 <Shortcut Id="DesktopShortcutId"
                           Name="$ProductName"
-                          Target="[INSTALLFOLDER]$(Split-Path $SourceFile -Leaf)"
+                          Target="[INSTALLFOLDER]$ExecutableName"
                           WorkingDirectory="INSTALLFOLDER" />
                 <RemoveFile Id="RemoveDesktopShortcut" Name="$ProductName.lnk" On="uninstall" />
                 <RegistryValue Root="HKCU"
