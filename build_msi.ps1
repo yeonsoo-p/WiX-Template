@@ -15,36 +15,38 @@ $ErrorActionPreference = "Stop"
 # Configuration
 $ProjectRoot = $PSScriptRoot
 
-# Read project name and version from pyproject.toml if not provided
-$pyprojectPath = Join-Path $ProjectRoot "pyproject.toml"
-if (Test-Path $pyprojectPath) {
-    $pyprojectContent = Get-Content $pyprojectPath -Raw
-    
-    # Extract project name if executable not specified
-    if (-not $PSBoundParameters.ContainsKey('ExecutableName')) {
-        if ($pyprojectContent -match '(?m)^\s*name\s*=\s*"([^"]+)"') {
-            $projectName = $matches[1]
-            $ExecutableName = "$projectName.exe"
-            Write-Host "Using executable name from pyproject.toml: $ExecutableName" -ForegroundColor Cyan
-        }
-    }
-    
-    # Extract version if not provided
-    if (-not $Version) {
-        if ($pyprojectContent -match 'version\s*=\s*"([^"]+)"') {
+# Read version from __version__.py if not provided
+if (-not $Version) {
+    $versionFile = Join-Path $ProjectRoot "__version__.py"
+    if (Test-Path $versionFile) {
+        $versionContent = Get-Content $versionFile -Raw
+        if ($versionContent -match '__version__\s*=\s*"([^"]+)"') {
             $Version = $matches[1]
-            Write-Host "Using version from pyproject.toml: $Version" -ForegroundColor Cyan
+            Write-Host "Using version from __version__.py: $Version" -ForegroundColor Cyan
         }
         else {
             $Version = "1.0.0"
-            Write-Host "Could not parse version from pyproject.toml, using default: $Version" -ForegroundColor Yellow
+            Write-Host "Could not parse version from __version__.py, using default: $Version" -ForegroundColor Yellow
         }
     }
-}
-else {
-    if (-not $Version) {
-        $Version = "1.0.0"
-        Write-Host "pyproject.toml not found, using default version: $Version" -ForegroundColor Yellow
+    else {
+        # Fallback to pyproject.toml if __version__.py doesn't exist
+        $pyprojectPath = Join-Path $ProjectRoot "pyproject.toml"
+        if (Test-Path $pyprojectPath) {
+            $pyprojectContent = Get-Content $pyprojectPath -Raw
+            if ($pyprojectContent -match 'version\s*=\s*"([^"]+)"') {
+                $Version = $matches[1]
+                Write-Host "Using version from pyproject.toml: $Version" -ForegroundColor Cyan
+            }
+            else {
+                $Version = "1.0.0"
+                Write-Host "Could not parse version from pyproject.toml, using default: $Version" -ForegroundColor Yellow
+            }
+        }
+        else {
+            $Version = "1.0.0"
+            Write-Host "Version file not found, using default: $Version" -ForegroundColor Yellow
+        }
     }
 }
 
@@ -201,7 +203,7 @@ if (-not (Test-Path $OutputDir)) {
 }
 
 # Generate a new GUID for the product (you should keep this consistent for upgrades)
-$UpgradeGuid = "2DC34973-3542-4695-9128-2E9766A096F4"
+$UpgradeGuid = "B7BA45D4-CA49-4F80-B7DF-F61E2730E149"
 
 # Scan the source directory structure
 Write-Host "Scanning source directory structure..." -ForegroundColor Yellow
@@ -228,23 +230,36 @@ $wxsContent = @"
         <StandardDirectory Id="TARGETDIR">
             <Directory Id="INSTALLFOLDER" Name="$InstallFolderName">
 $(
-    # Generate directory structure
+    # Generate directory structure with proper nesting
     $dirXml = ""
-    foreach ($dirId in $directories.Keys) {
-        $dir = $directories[$dirId]
-        # Find parent indent level
-        $parentId = $dir.ParentId
-        $indentLevel = 4
-        if ($parentId -ne "INSTALLFOLDER") {
-            $indentLevel = 5
-            while ($parentId -ne "INSTALLFOLDER" -and $directories.ContainsKey($parentId)) {
-                $parentId = $directories[$parentId].ParentId
-                $indentLevel++
+    
+    # First, create a function to recursively generate directory XML
+    function Get-DirectoryXml {
+        param(
+            [string]$ParentId,
+            [hashtable]$AllDirs,
+            [int]$IndentLevel
+        )
+        
+        $xml = ""
+        $indent = " " * $IndentLevel
+        
+        # Find all directories that are children of this parent
+        foreach ($dirId in $AllDirs.Keys) {
+            $dir = $AllDirs[$dirId]
+            if ($dir.ParentId -eq $ParentId) {
+                $xml += "$indent<Directory Id=`"$dirId`" Name=`"$($dir.Name)`">`n"
+                # Recursively add children
+                $xml += Get-DirectoryXml -ParentId $dirId -AllDirs $AllDirs -IndentLevel ($IndentLevel + 2)
+                $xml += "$indent</Directory>`n"
             }
         }
-        $indent = " " * $indentLevel
-        $dirXml += "$indent<Directory Id=`"$dirId`" Name=`"$($dir.Name)`" />`n"
+        
+        return $xml
     }
+    
+    # Generate the directory structure starting from INSTALLFOLDER
+    $dirXml = Get-DirectoryXml -ParentId "INSTALLFOLDER" -AllDirs $directories -IndentLevel 16
     $dirXml.TrimEnd()
 )
             </Directory>
